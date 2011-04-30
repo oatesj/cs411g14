@@ -70,6 +70,11 @@
 #include <linux/kmemleak.h>
 #include <asm/atomic.h>
 
+#include <linux/linkage.h>
+#include <asm/thread_info.h>
+#include <linux/syscalls.h>
+
+
 /*
  * slob_block has a field 'units', which indicates size of block if +ve,
  * or offset of next block if -ve (in SLOB_UNITs).
@@ -107,6 +112,15 @@ struct slob_page {
 		struct page page;
 	};
 };
+
+
+
+/* records claimed, free space */
+static unsigned int team14_claimed = 0;
+static unsigned int team14_free = 0;
+
+
+
 static inline void struct_slob_page_wrong_size(void)
 { BUILD_BUG_ON(sizeof(struct slob_page) != sizeof(struct page)); }
 
@@ -351,7 +365,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 		b = slob_page_alloc(sp, size, align);
 		if (!b)
 			continue;
-
+		team14_free = team14_free - SLOB_UNITS(size);
 		/* Improve fragment distribution and reduce our average
 		 * search time by starting our next search here. (see
 		 * Knuth vol 1, sec 2.5, pg 449) */
@@ -372,6 +386,8 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 
 		spin_lock_irqsave(&slob_lock, flags);
 		sp->units = SLOB_UNITS(PAGE_SIZE);
+		team14_claimed = team14_claimed + PAGE_SIZE;
+		team14_free = team14_free + PAGE_SIZE;/*team14 stuff here*/
 		sp->free = b;
 		INIT_LIST_HEAD(&sp->list);
 		set_slob(b, SLOB_UNITS(PAGE_SIZE), b + SLOB_UNITS(PAGE_SIZE));
@@ -696,4 +712,15 @@ void __init kmem_cache_init(void)
 void __init kmem_cache_init_late(void)
 {
 	/* Nothing to do */
+}
+SYSCALL_DEFINE0(get_slob_amt_claimed)
+{ 
+	printk("claimed space: %u\n", team14_claimed);
+	return 0;
+}
+
+SYSCALL_DEFINE0(get_slob_amt_free)
+{
+	printk("free space: %u\n",team14_free);
+	return 0;
 }
